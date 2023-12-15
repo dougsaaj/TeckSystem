@@ -1,0 +1,655 @@
+unit UListaTarefas;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, ExtCtrls, Grids, DBGrids, StdCtrls, Buttons, ComCtrls, DBClient;
+
+type
+  TfrmListaTarefas = class(TForm)
+    pnlPrincipal: TPanel;
+    BevelGrid: TBevel;
+    BevelCabecalho: TBevel;
+    BevelButtonTarefas: TBevel;
+    BevelButton: TBevel;
+    BevelTarefas: TBevel;
+    bdGridLista: TDBGrid;
+    dbGridTarefas: TDBGrid;
+    btnCadastrar: TBitBtn;
+    btnAlterar: TBitBtn;
+    btnDeletar: TBitBtn;
+    btnSair: TBitBtn;
+    btnCadastrarTarefa: TBitBtn;
+    btnAlterarTarefa: TBitBtn;
+    btnDeletarTarefa: TBitBtn;
+    btnPesquisar: TBitBtn;
+    pnlVisualizacao2: TPanel;
+    bvlLista: TBevel;
+    bvlTarefas: TBevel;
+    tvLista: TTreeView;
+    rgVisualizacao: TRadioGroup;
+    lblTarefas: TLabel;
+    lblLista: TLabel;
+    ScrollBoxPanel: TScrollBox;
+    pnlTarefas: TPanel;
+    btnImprimir: TBitBtn;
+    btnConcluirTarefa: TBitBtn;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnSairClick(Sender: TObject);
+    procedure btnPesquisarClick(Sender: TObject);
+    procedure btnAlterarClick(Sender: TObject);
+    procedure btnDeletarClick(Sender: TObject);
+    procedure btnAlterarTarefaClick(Sender: TObject);
+    procedure btnDeletarTarefaClick(Sender: TObject);
+    procedure btnCadastrarClick(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure btnCadastrarTarefaClick(Sender: TObject);
+    procedure tvListaClick(Sender: TObject);
+    procedure rgVisualizacaoClick(Sender: TObject);
+    procedure btnImprimirClick(Sender: TObject);
+    procedure btnConcluirTarefaClick(Sender: TObject);
+  private
+    { Private declarations }
+
+    posicaoPanel, posicaoTitulo, posicaoData, posicaoMemo: Integer;
+    somaAltura: Integer;
+
+    procedure PreencherTreeView;
+    procedure criaPanelTarefas(titulo, descricao: string; idTarefa, idLista, contador: Integer; dtVencimento: TDate);
+    procedure exibirTarefas(idTarefa: Integer);
+    procedure posicaoPadrao;
+    procedure EditarTree(Sender: TObject);
+    procedure DeletarTree(Sender: TObject);
+    procedure ConcluirTarefa(Sender: TObject);
+
+  public
+    { Public declarations }
+  end;
+
+var
+  frmListaTarefas: TfrmListaTarefas;
+
+implementation
+
+uses UDMLista, uServicos, UCadastroLista, DB, uTarefas, uTarefasDao,
+  uLista, uListaDao, UDM, UCadastroTarefas, URelatorio;
+
+{$R *.dfm}
+
+procedure TfrmListaTarefas.FormCreate(Sender: TObject);
+begin
+  DMLista := TDMLista.Create(nil);
+
+  somaAltura := 0;
+  rgVisualizacaoClick(Sender);
+  btnPesquisarClick(Sender);
+  PreencherTreeView;
+end;
+
+procedure TfrmListaTarefas.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(DMLista);
+end;
+
+procedure TfrmListaTarefas.btnSairClick(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure TfrmListaTarefas.btnPesquisarClick(Sender: TObject);
+begin
+  DMLista.cdsListaTarefas.Close;
+  DMLista.cdsListaTarefas.Open;
+end;
+
+procedure TfrmListaTarefas.btnAlterarClick(Sender: TObject);
+begin
+  if (not DMLista.cdsListaTarefas.Active) or (DMLista.cdsListaTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  Application.CreateForm(TfrmCadastroLista, frmCadastroLista);
+  try
+    frmCadastroLista.edtId.Text        := DMLista.cdsListaTarefasID.AsString;
+    frmCadastroLista.edtDescricao.Text := DMLista.cdsListaTarefasDESCRICAO.AsString;
+
+    if Trim(DMLista.cdsListaTarefasSTATUS.AsString) = 'Ativo' then
+      frmCadastroLista.cbbStatus.ItemIndex := 0
+    else
+      frmCadastroLista.cbbStatus.ItemIndex := 1;
+
+    frmCadastroLista.FTipoMovimentacao := 'alterar';
+    frmCadastroLista.ShowModal;
+  finally
+    frmCadastroLista.Release;
+    DMLista.cdsListaTarefas.Refresh;
+  end;
+
+end;
+
+procedure TfrmListaTarefas.btnDeletarClick(Sender: TObject);
+var
+  Lista: TLista;
+  ListaDao: TListaDao;
+begin
+  if (not DMLista.cdsListaTarefas.Active) or (DMLista.cdsListaTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  if DMLista.cdsTarefas.RecordCount > 0 then
+  begin
+    Servicos.Mensagem.WARNING('Existem tarefas para essa lista. Favor excluir as tarefas antes de excluir a lista.');
+    Exit;
+  end;
+
+  if not Servicos.Mensagem.QUESTION('Tem certeza que deseja excluir o registro selecionado?') then
+    Exit;
+
+  Lista := TLista.Create;
+  Lista.ID := DMLista.cdsListaTarefasID.AsInteger;
+
+  ListaDao := TListaDao.Create(DM.conn);
+
+  try
+    ListaDao.Deletar(Lista);
+    DMLista.cdsTarefas.Refresh;
+    Servicos.Mensagem.INFO('Lista deletada com sucesso!');
+    DMLista.cdsListaTarefas.Refresh;
+  except
+    Servicos.Mensagem.WARNING('Falha ao tentar deletar a lista..');
+  end;
+
+  Lista.Destroy;
+  ListaDao.Destroy;
+end;
+
+procedure TfrmListaTarefas.btnAlterarTarefaClick(Sender: TObject);
+begin
+  if (not DMLista.cdsTarefas.Active) or (DMLista.cdsTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  Application.CreateForm(TfmrCadastroTarefas, fmrCadastroTarefas);
+  try
+    fmrCadastroTarefas.edtIdLista.Text         := DMLista.cdsTarefasID_LISTA.AsString;
+    fmrCadastroTarefas.edtIdTarefa.Text        := DMLista.cdsTarefasID.AsString;
+    fmrCadastroTarefas.edtTitulo.Text          := DMLista.cdsTarefasTITULO.AsString;
+    fmrCadastroTarefas.mmDescricao.Text        := DMLista.cdsTarefasDESCRICAO.AsString;
+    fmrCadastroTarefas.dtpVencimento.DateTime  := DMLista.cdsTarefasDATA_VENCIMENTO.AsDateTime;
+
+    fmrCadastroTarefas.FTipoMovimentacao := 'alterar';
+    fmrCadastroTarefas.ShowModal;
+  finally
+    fmrCadastroTarefas.Release;
+    DMLista.cdsListaTarefas.Refresh;
+  end;
+
+end;
+
+procedure TfrmListaTarefas.btnDeletarTarefaClick(Sender: TObject);
+var
+  Tarefas: TTarefas;
+  TarefasDao: TTarefasDao;
+begin
+  if (not DMLista.cdsTarefas.Active) or (DMLista.cdsTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  if not Servicos.Mensagem.QUESTION('Tem certeza que deseja excluir o registro selecionado?') then
+    Exit;
+
+  Tarefas := TTarefas.Create;
+  Tarefas.ID := DMLista.cdsTarefasID.AsInteger;
+
+  TarefasDao := TTarefasDao.Create(DM.conn);
+
+  try
+    TarefasDao.Deletar(Tarefas);
+    DMLista.cdsTarefas.Refresh;
+    Servicos.Mensagem.INFO('Tarefa deletada com sucesso!');
+  except
+    Servicos.Mensagem.WARNING('Falha ao tentar deletar a tarefa..');
+  end;
+
+  Tarefas.Destroy;
+  TarefasDao.Destroy;
+end;
+
+procedure TfrmListaTarefas.btnCadastrarClick(Sender: TObject);
+begin
+  Application.CreateForm(TfrmCadastroLista, frmCadastroLista);
+  try
+    frmCadastroLista.FTipoMovimentacao := 'cadastrar';
+    frmCadastroLista.ShowModal;
+  finally
+    frmCadastroLista.Release;
+    DMLista.cdsListaTarefas.Refresh;
+  end;
+end;
+
+procedure TfrmListaTarefas.FormClose(Sender: TObject;
+  var Action: TCloseAction);
+begin
+  frmListaTarefas := nil;
+  Action := caFree;
+end;
+
+procedure TfrmListaTarefas.btnCadastrarTarefaClick(Sender: TObject);
+begin
+  Application.CreateForm(TfmrCadastroTarefas, fmrCadastroTarefas);
+  try
+    fmrCadastroTarefas.FTipoMovimentacao := 'cadastrar';
+
+    fmrCadastroTarefas.edtIdLista.Text    := DMLista.cdsListaTarefasID.AsString;
+
+    fmrCadastroTarefas.ShowModal;
+  finally
+    fmrCadastroTarefas.Release;
+    DMLista.cdsListaTarefas.Refresh;
+  end;
+
+end;
+
+procedure TfrmListaTarefas.PreencherTreeView;
+var
+  vNode: TTreeNode;
+  id: Integer;
+begin
+  if (not DMLista.cdsListaTarefas.Active) or (DMLista.cdsListaTarefas.RecordCount = 0) then
+  begin
+    tvLista.Items.Clear;
+    Exit;
+  end;
+
+  DMLista.cdsListaTarefas.First;
+
+  vNode := nil;
+  
+  while not DMLista.cdsListaTarefas.Eof do
+  begin
+    vNode := tvLista.Items.AddChild(nil, DMLista.cdsListaTarefasID.AsString);
+    tvLista.Items.AddChild(vNode, DMLista.cdsListaTarefasDESCRICAO.AsString);
+
+    DMLista.cdsListaTarefas.Next;
+  end;
+
+  tvLista.FullExpand;
+end;
+
+procedure TfrmListaTarefas.tvListaClick(Sender: TObject);
+var
+  noPai: string;
+  idNo: TTreeNode;
+begin
+  if tvLista.Selected = nil then
+    Exit;
+
+  idNo := tvLista.Selected;
+
+  while idNo.Parent <> nil do
+    idNo := idNo.Parent;  
+
+  noPai := Trim(idNo.Text);
+
+  Self.posicaoPadrao;
+
+  try
+    Self.exibirTarefas(StrToInt(noPai));
+  except
+    Self.exibirTarefas(0);
+  end;
+
+  posicaoPanel  := 0;
+  posicaoTitulo := 0;
+  posicaoData   := 0;
+  posicaoMemo   := 0;
+end;
+
+
+procedure TfrmListaTarefas.criaPanelTarefas(titulo, descricao: string;
+  idTarefa, idLista, contador: Integer; dtVencimento: TDate);
+var
+  painel: TPanel;
+  memo: TMemo;
+  labelTitulo, labelData: TLabel;
+  buttonEd, buttonEx, buttonConcluir: TButton;
+begin
+  painel := TPanel.Create(pnlTarefas);
+  painel.Parent     := pnlTarefas;
+  painel.Width      := 780;
+  painel.Height     := 153;
+  painel.Left       := 8;
+
+  if contador = 0 then
+  begin
+    painel.Top            := 10;
+    somaAltura            := 155;
+  end else
+  if contador = 1 then
+  begin
+    painel.Top            := posicaoPanel + painel.Height;
+    somaAltura            := somaAltura + (painel.Height * contador) + 10;
+  end else
+  begin
+    painel.Top            := posicaoPanel + (painel.Height * contador);
+    somaAltura            := somaAltura + (painel.Height * contador) + 10;
+  end;
+
+  if pnlTarefas.Height <= somaAltura then
+    pnlTarefas.Height     := somaAltura;
+
+  painel.BevelInner       := bvLowered;
+  painel.BevelOuter       := bvRaised;
+  painel.tag              := idTarefa;
+
+  painel.ParentColor      := False;
+  painel.ParentBackground := False;
+
+  buttonEx := TBitBtn.Create(painel);
+  buttonEx.Parent    := painel;
+  buttonEx.Caption   := 'Deletar';
+  buttonEx.Width     := 70;
+  buttonEx.Left      := 670;
+  buttonEx.Top       := painel.Height-30;
+  buttonEx.Height    := 25;
+  buttonEx.Tag       := idTarefa;
+  buttonEx.OnClick   := DeletarTree;
+
+  buttonEd := TBitBtn.Create(painel);
+  buttonEd.Parent    := painel;
+  buttonEd.Caption   := 'Editar';
+  buttonEd.Width     := 70;
+  buttonEd.Left      := buttonEx.Left - 75;
+  buttonEd.Top       := painel.Height-30;
+  buttonEd.Height    := 25;
+  buttonEd.Tag       := idTarefa;
+  buttonEd.OnClick   := EditarTree;
+
+  buttonConcluir := TBitBtn.Create(painel);
+  buttonConcluir.Parent    := painel;
+  buttonConcluir.Caption   := 'Concluir';
+  buttonConcluir.Width     := 70;
+  buttonConcluir.Left      := buttonEd.Left - 75;
+  buttonConcluir.Top       := painel.Height-30;
+  buttonConcluir.Height    := 25;
+  buttonConcluir.Tag       := idTarefa;
+  buttonConcluir.OnClick   := ConcluirTarefa;
+
+  labelTitulo := TLabel.Create(painel);
+  labelTitulo.Parent     := painel;
+  labelTitulo.Font.Style := [fsBold];
+  labelTitulo.Left       := 30;//posicaoTitulo;//left
+  labelTitulo.Top        := 16;
+  labelTitulo.Caption    := IntToStr(idTarefa) +' - '+titulo;
+  labelTitulo.Visible    := True;
+
+  labelData := TLabel.Create(painel);
+  labelData.Parent     := painel;
+  labelData.Font.Style := [fsBold];
+  labelData.Left       := 638;
+  labelData.Top        := 16;
+  labelData.Caption    := DateToStr(dtVencimento);
+  labelData.Visible    := True;
+  labelData.Alignment  := taRightJustify;
+  labelData.AutoSize   := False;
+  labelData.Width      := 111;
+
+  memo := TMemo.Create(painel);
+  memo.Parent     := painel;
+  memo.Height     := 81;
+  memo.Width      := 721;
+  memo.Left       := 30;//posicaoMemo;//left
+  memo.Top        := 40;
+  memo.Text       := '';
+  memo.Text       := descricao;
+  memo.Visible    := True;
+end;
+
+procedure TfrmListaTarefas.exibirTarefas(idTarefa: Integer);
+var
+  contador: Integer;
+
+  i: Integer;
+  temp: TComponent;
+begin
+  pnlTarefas.DestroyComponents;
+
+  for I := pnlTarefas.ComponentCount - 1 downto 0 do
+  begin
+    Temp := pnlTarefas.Components[I];
+    if (Temp is TPanel) then
+    begin
+      if (temp as tpanel).Parent=pnlTarefas then
+      begin
+          (temp as tpanel).visible := False;
+      end;
+    end
+  end;
+
+  pnlTarefas.Parent      := ScrollBoxPanel;
+  ScrollBoxPanel.Visible := True;
+
+  DMLista.cdsTarefas.Close;
+  DMLista.sqlTarefas.ParamByName('idlista').AsInteger := idTarefa;
+  DMLista.cdsTarefas.Open;
+
+  DMLista.cdsTarefas.First;
+
+  contador := 0;
+
+  while not DMLista.cdsTarefas.Eof do
+  begin
+    criaPanelTarefas(
+      DMLista.cdsTarefasTITULO.AsString,
+      DMLista.cdsTarefasDESCRICAO.AsString,
+      DMLista.cdsTarefasID.AsInteger,
+      DMLista.cdsTarefasID_LISTA.AsInteger,
+      contador,
+      DMLista.cdsTarefasDATA_VENCIMENTO.AsDateTime);
+
+    contador := contador + 1;  
+    DMLista.cdsTarefas.Next;
+  end;
+end;
+
+procedure TfrmListaTarefas.rgVisualizacaoClick(Sender: TObject);
+begin
+  if rgVisualizacao.ItemIndex = 0 then//DBGrid
+    pnlVisualizacao2.Visible := False
+  else
+    pnlVisualizacao2.Visible := True;
+end;
+
+procedure TfrmListaTarefas.posicaoPadrao;
+begin
+  posicaoPanel  := 10; //top
+  posicaoTitulo := 20; //left
+  posicaoData   := 708; //left
+  posicaoMemo   := 64; //left
+end;
+
+procedure TfrmListaTarefas.DeletarTree(Sender: TObject);
+var
+  idTarefa: Integer;
+  Tarefas: TTarefas;
+  TarefasDao: TTarefasDao;
+begin
+  if not Servicos.Mensagem.QUESTION('Tem certeza que deseja deletar o registro?') then
+    Exit;
+    
+  //idTarefa := (((Sender as TBitBtn).Parent) as TPanel).tag;
+  idTarefa := ((Sender as TBitBtn).Parent).tag;
+
+  Tarefas := TTarefas.Create;
+  Tarefas.ID := idTarefa;
+
+  TarefasDao := TTarefasDao.Create(DM.conn);
+
+  if not TarefasDao.Pesquisar(Tarefas) then
+  begin
+    Tarefas.Destroy;
+    TarefasDao.Destroy;
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+  
+  try
+    DM.IniciarTransacao();
+
+    TarefasDao.Deletar(Tarefas);
+    DM.CommitTransacao();
+    Servicos.Mensagem.INFO('Tarefa deletado com sucesso!');
+    DMLista.cdsListaTarefas.Refresh;
+    tvListaClick(Sender);
+  except
+    DM.RollbackTransacao();
+    Servicos.Mensagem.WARNING('Falha ao tentar excluir a tarefa.');
+  end;
+
+  Tarefas.Destroy;
+  TarefasDao.Destroy;
+end;
+
+procedure TfrmListaTarefas.EditarTree(Sender: TObject);
+var
+  idTarefa: Integer;
+  Tarefas: TTarefas;
+  TarefasDao: TTarefasDao;
+begin
+  idTarefa := ((Sender as TBitBtn).Parent).tag;
+
+  Tarefas := TTarefas.Create;
+  Tarefas.ID := idTarefa;
+
+  TarefasDao := TTarefasDao.Create(DM.conn);
+
+  if not TarefasDao.Pesquisar(Tarefas) then
+  begin
+    Tarefas.Destroy;
+    TarefasDao.Destroy;
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  Application.CreateForm(TfmrCadastroTarefas, fmrCadastroTarefas);
+  try
+    fmrCadastroTarefas.edtIdLista.Text         := IntToStr(Tarefas.ID_LISTA);
+    fmrCadastroTarefas.edtIdTarefa.Text        := IntToStr(Tarefas.ID);
+    fmrCadastroTarefas.edtTitulo.Text          := Tarefas.TITULO;
+    fmrCadastroTarefas.mmDescricao.Text        := Tarefas.DESCRICAO;
+    fmrCadastroTarefas.dtpVencimento.DateTime  := Tarefas.DATA_VENCIMENTO;
+
+    Tarefas.Destroy;
+    TarefasDao.Destroy;
+
+    fmrCadastroTarefas.btnCancelar.Visible     := False;
+    fmrCadastroTarefas.FTipoMovimentacao       := 'alterar';
+    fmrCadastroTarefas.ShowModal;
+  finally
+    fmrCadastroTarefas.Release;
+    DMLista.cdsListaTarefas.Refresh;
+    //tvListaClick(Sender);
+  end;
+end;
+
+procedure TfrmListaTarefas.btnImprimirClick(Sender: TObject);
+begin
+  if (not DMLista.cdsTarefas.Active) or (DMLista.cdsTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  if fmrRelatorio = nil then
+    Application.CreateForm(TfmrRelatorio, fmrRelatorio);
+
+  fmrRelatorio.Close;
+end;
+
+procedure TfrmListaTarefas.btnConcluirTarefaClick(Sender: TObject);
+var
+  Tarefas: TTarefas;
+  TarefasDao: TTarefasDao;
+begin
+  if (not DMLista.cdsTarefas.Active) or (DMLista.cdsTarefas.RecordCount = 0) then
+  begin
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  if not Servicos.Mensagem.QUESTION('Tem certeza que deseja concluir a tarefa?') then
+    Exit;
+
+  Tarefas := TTarefas.Create;
+  Tarefas.ID      := DMLista.cdsTarefasID.AsInteger;
+  Tarefas.STATUS  := 'OK';
+
+  TarefasDao := TTarefasDao.Create(DM.conn);
+
+  if not TarefasDao.Pesquisar(Tarefas) then
+  begin
+    Tarefas.Destroy;
+    TarefasDao.Destroy;
+    Servicos.Mensagem.WARNING('Nenhum registro encontrado!');
+    Exit;
+  end;
+
+  try
+    DM.IniciarTransacao();
+
+    TarefasDao.Deletar(Tarefas);
+    DM.CommitTransacao();
+    Servicos.Mensagem.INFO('Tarefa deletado com sucesso!');
+    DMLista.cdsListaTarefas.Refresh;
+    tvListaClick(Sender);
+  except
+    DM.RollbackTransacao();
+    Servicos.Mensagem.WARNING('Falha ao tentar excluir a tarefa.');
+  end;
+
+  Tarefas.Destroy;
+  TarefasDao.Destroy;
+end;
+
+procedure TfrmListaTarefas.ConcluirTarefa(Sender: TObject);
+var
+  idTarefa: Integer;
+  Tarefas: TTarefas;
+  TarefasDao: TTarefasDao;
+begin
+  //idTarefa := (((Sender as TBitBtn).Parent) as TPanel).tag;
+
+  idTarefa := ((Sender as TBitBtn).Parent).tag;
+
+  if not Servicos.Mensagem.QUESTION('Tem certeza que deseja concluir a tarefa?') then
+    Exit;
+
+  Tarefas := TTarefas.Create;
+  Tarefas.ID      := idTarefa;
+  Tarefas.STATUS  := 'OK';
+  
+  TarefasDao := TTarefasDao.Create(DM.conn);
+
+  try
+    TarefasDao.upStatus(Tarefas);
+    DMLista.cdsTarefas.Refresh;
+    Servicos.Mensagem.INFO('Tarefa concluída com sucesso!');
+  except
+    Servicos.Mensagem.WARNING('Falha ao tentar deletar a tarefa..');
+  end;
+
+  Tarefas.Destroy;
+  TarefasDao.Destroy;
+end;
+
+end.
